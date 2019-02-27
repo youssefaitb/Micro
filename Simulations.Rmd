@@ -1,0 +1,176 @@
+---
+title: "Data simualtion"
+author: "Y.A.B."
+date: "2/26/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(MonteCarlo)
+library(latex2exp)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(jtools)
+library(ggstance)
+library(ggthemes)
+theme_gw = theme_fivethirtyeight()+theme(plot.title = element_text(size=13, face="bold",margin = margin(10,0,10,0)))
+library(AER)
+
+```
+
+## Preamble
+I started by trying to run simulations for my own research project (on labor bargaining power in a sequential production model) but failed to find any regression simulations that would be interesting at this stage because the current identification that I have is very simple (it is not the most elaborate component of the project) and I don't have any interesting aspects to simulate. 
+
+So I stuck with the proposed framework.. 
+
+## Simulation 
+
+You can also embed plots, for example:
+
+First we set up the data and main function. 
+
+```{r Regression function, include=TRUE}
+lin_model <- function(beta0, beta1, beta2, beta3, n, z, var_i){
+  ind = 
+    data.frame(
+      i = 1:n,
+      ei = rnorm(length(1:n), mean=0, sd=var_i),
+      female = c(rep(1, z), rep(0, 10-z)) %>% rep(.,100),
+      age = rnorm(length(1:n), mean=46, sd=13)
+    )
+  
+  ind <- ind %>% mutate(height = beta0 + beta1 * age + beta2 * female + beta3 *age*female + ei)
+  
+  model <- lm(height ~ female + age + female*age, data=ind)
+  betahat <- model$coefficients[4]
+  betahat <- unname(betahat)
+  return(list("betahat"=betahat))
+}
+```
+
+Then, we define the parameter space 
+```{r Parameters values}
+# define fixed parameter grids:
+  n_grid<-c(1000)
+  var_i_grid<-c(1)
+  beta0_grid<-c(10)
+  beta2_grid<-c(-6)
+  beta3_grid<-c(-0.5)
+  gamma_grid<-c(0)
+# beta_1 is the parameter that we will let vary to see if changes beta_3 so we specify a grid for beta1 
+  beta1_grid<-c(0,5,10)
+  z_grid <-c(3,5,8)
+  
+param_list=list("n"=n_grid, "z"=z_grid, "var_i"=var_i_grid, "beta0"=beta0_grid, "beta1"=beta1_grid, "beta2"=beta2_grid, "beta3"=beta3_grid)
+``` 
+
+Running simulation 
+
+```{r MC simulation}
+mc_result <- MonteCarlo(func = lin_model, nrep = 500, param_list = param_list)
+```
+
+Getting a summary of results 
+
+```{r Results-1}
+summary(mc_result)
+  df.mc<-MakeFrame(mc_result)
+  head(df.mc)
+```
+
+For the three different levels of beta1, the point estimate of betahat varies only marginally. We must however test the significance of the difference to assert that there is no incidence.  
+
+Creating a graph 
+```{r Figure1}
+class(df.mc$z)
+df.mc$z <- as.factor(df.mc$z)
+ggplot(df.mc, aes(x=betahat, color=z)) + 
+  geom_density() +
+  labs(color = TeX("z=")) + 
+  labs(title = TeX("Distribution of the $\\beta_3$ estimate for different levels of gender mixity"),
+       caption = paste("Source: ",mc_result$meta$nrep," simulated samples of n=",n_grid,", with true coefficient of interest = -0.5")) +
+  theme_gw
+```
+
+```{r Figure2}
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+  ggplot(df.mc, aes(y=betahat, x=z, color=z)) + geom_boxplot() +
+  geom_hline(aes(yintercept=mc_result$param_list$beta3), color="black", linetype="solid", size=.5) +
+  labs(color = TeX("$z =$")) + scale_fill_manual(values=cbPalette) +
+  labs(title = TeX("Estimates of $\\beta_3$ for different proportions of gender mixity"),
+      subtitle = TeX("The estimates appear very comparable in terms of mean, but the precision varies a little"),
+       caption = paste("Source: ",mc_result$meta$nrep," simulated samples of n=",n_grid,", with true coefficient of interest = -0.5")) +
+  theme_gw
+```
+
+This is not the graph I am trying to get, and I don't know why. 
+
+
+##Part b: Letting gamma be different than 0. 
+
+```{r Regression-2, include=TRUE}
+lin_model_2 <- function(beta0, beta1, beta2, beta3, gamma, n, z, var_i, var_x, mean_x){
+  ind2 = 
+    data.frame(
+      i = 1:n,
+      ei = rnorm(length(1:n), mean=0, sd=var_i),
+      female = c(rep(1, z), rep(0, 10-z)) %>% rep(.,100),
+      age = rnorm(length(1:n), mean=46, sd=13),
+      xi = rnorm(length(1:n), mean=mean_x, sd=var_x)
+    )
+  
+  ind2 <- ind2 %>% mutate(height = beta0 + beta1 * age + beta2 * female + beta3 *age*female + gamma*xi + ei)
+  
+  model.2 <- lm(height ~ age + female + female*age + xi, data=ind2)
+  betahat <- model.2$coefficients[5]
+  betahat <- unname(betahat)
+  return(list("betahat"=betahat))
+}
+```
+
+```{r Parameters-2}
+# define fixed parameter grids:
+  n_grid<-c(1000)
+  var_i_grid<-c(1)
+  beta0_grid<-c(10)
+  beta2_grid<-c(-6)
+  beta3_grid<-c(-0.5)
+  gamma_grid<-c(0)
+  beta1_grid<-c(10)
+  z_grid <-c(5)
+  mean_x_grid<-c(0)
+# changing properties of x 
+  var_x_grid<-c(1,10,20)
+  
+
+  
+param_list_2=list("n"=n_grid, "z"=z_grid, "var_i"=var_i_grid, "beta0"=beta0_grid, "beta1"=beta1_grid, "beta2"=beta2_grid, "beta3"=beta3_grid, "var_x"=var_x_grid, "gamma"=gamma_grid, "mean_x"=mean_x_grid)
+``` 
+
+```{r MC-2}
+mc_result_2 <- MonteCarlo(func = lin_model_2, nrep = 500, param_list = param_list_2)
+```
+
+```{r Results-2}
+summary(mc_result_2)
+  df.mc.2<-MakeFrame(mc_result_2)
+  head(df.mc.2)
+```
+
+```{r Figure3}
+class(df.mc.2$var_x) 
+df.mc.2$var_x <- as.factor(df.mc.2$var_x)
+  ggplot(df.mc.2, aes(y=betahat, x=var_x, color=var_x)) + geom_boxplot() +
+  geom_hline(aes(yintercept=mc_result$param_list$beta3), color="black", linetype="solid", size=.5) +
+  labs(color = TeX("$var_x =$")) + scale_fill_manual(values=cbPalette) +
+  labs(title = TeX("Estimation of $\\beta_3$ for different variances of X"),
+      subtitle = TeX("$\\gamma = 0$ changes in properties of X are not relevant to estimation of $\\beta_3$"),
+       caption = paste("Source: ",mc_result$meta$nrep," simulated samples of n=",n_grid,", with true coefficient of interest = -0.5")) +
+  theme_gw
+```
+
+This result is expectable because X is here built to be irrelevant to the model, therefore no bias is introduced. 
